@@ -58,8 +58,11 @@ def main(mode):
         Data_functions.filter_descriptors()
 
     elif mode == 'create_train_validate_test':
+        print(f'started create_train_validate_test')
+        Data_functions.Oversample()
         Data_functions.create_train_test_validate()
         Data_functions.normalize()
+
 
     elif mode == 'pca':
         Data_functions.calc_pca()
@@ -76,9 +79,13 @@ def main(mode):
     elif mode == 'descriptor_stats':
         Data_functions.show_descriptor_stats()
 
+    elif mode == 'evaluate':
+        Data_functions.evaluate_models()
+
     elif mode == 'test':
+        print('no tests needed')
         #util.missing_values_to_nan()
-        Data_functions.grid_search()
+        #Data_functions.grid_search()
 
 
 if __name__ == "__main__":
@@ -93,7 +100,8 @@ if __name__ == "__main__":
                                  'create_train_validate_test',
                                  'multi-layer-perceptron',
                                  'keras-deep-model',
-                                 'random-forest'],
+                                 'random-forest',
+                                 'evaluate'],
                         help='choose the mode the programm should run in.')
 
     main(parser.parse_args().mode)

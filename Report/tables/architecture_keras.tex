@@ -1,0 +1,10 @@
+\begin{tabular}{lll}
+\hline
+\multicolumn{1}{|l|}{Baseline simmilar to MLPC} & \multicolumn{1}{l|}{Small} & \multicolumn{1}{l|}{Deep} \\ \hline
+dense(400,act=relu)                             & dense(60,act=relu)         & dense(400,act=relu)       \\
+dense(400,act=relu)                             & dense(30,act=relu)         & dropout(0.5,act=relu)     \\
+dense(1,act=sigm)                               & dense(1,act=sigm)          & dense(200,act=relu)       \\
+                                                &                            & dense(100,act=relu)       \\
+                                                &                            & dense(50,act=relu)        \\
+                                                &                            & dense(1,act=sigm)        
+\end{tabular}

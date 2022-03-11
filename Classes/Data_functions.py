@@ -1,4 +1,3 @@
-import math
 import os
 import random
 
@@ -7,29 +6,35 @@ import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Activation, LeakyReLU
 from keras.callbacks import ReduceLROnPlateau, ModelCheckpoint
-from keras.metrics import  TruePositives,FalsePositives,TrueNegatives,FalseNegatives,BinaryAccuracy,Precision,Recall,AUC
+from keras.metrics import TruePositives, FalsePositives, TrueNegatives, FalseNegatives, BinaryAccuracy, Precision, \
+    Recall, AUC
+
 from tensorflow import convert_to_tensor
 
-from Classes.util import read_in_csv_from_directory, read_all_all_filenames, FilterClass
+from Classes.util import read_in_csv_from_directory, read_all_all_filenames, FilterClass, create_confusion_matrix, \
+    oversample_dataset
 from pandas import DataFrame, Series, merge, concat, read_pickle, to_numeric
 
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import confusion_matrix,ConfusionMatrixDisplay
+
 
 from tqdm import tqdm
 import pickle
-import h5py
-from matplotlib.pyplot import plot, show, title, xlabel, ylabel, savefig, gcf
+from matplotlib.pyplot import plot, show, title, xlabel, ylabel, savefig, gcf, legend
 
 from rdkit import Chem
 from mordred import Calculator, descriptors
 
 
 def download_and_unzip_files():
+    """
+    Downloads the dataset
+    :return:
+    """
     print('=== Started Download ===')
     # downloads files
     os.system(
@@ -45,6 +50,9 @@ def download_and_unzip_files():
 
 
 def convert_csv_to_Dataframe():
+    """
+    :return: Dataframe containing the data of the csv files
+    """
     dataset = read_in_csv_from_directory('./Data/raw_dataset')
     # reindex so that each element has their own index
     dataset.index = list(range(0, len(dataset.index)))
@@ -54,16 +62,29 @@ def convert_csv_to_Dataframe():
 
 
 def eliminate_values_with_pchembl_Nan(dataset):
+    """
+    :param dataframe: Dataframe containing molecules with and without pchembl_value
+    :return: cleaned Dataframe with all molecules removed that do not have a pchembl_value
+    """
     dataset.dropna(subset=["pchembl_value"], inplace=True)
     return dataset
 
 
 def remove_molecules_without_smiles(dataframe: DataFrame):
+    """
+    :param dataframe: Dataframe containing molecules with and without smiles representation
+    :return: cleaned Dataframe with all molecules removed that do not have a smiles representation
+    """
     dataframe = dataframe[~dataframe['canonical_smiles'].isna()]
     return dataframe
 
 
 def remove_and_combine_molecules(dataframe: DataFrame):
+    """
+    Eliminates empty and double molecules
+    :param dataframe: Input dataframe containing molecules with pchembl_value
+    :return: Cleaned pandas dataset
+    """
     # we extract the molecules that occur more often in the dataframe
     bool_unique_or_not = dataframe.duplicated(subset='molecule_chembl_id', keep=False)
     # all_duplicates contains now all molecules that occur multiple times
@@ -117,6 +138,11 @@ def remove_and_combine_molecules(dataframe: DataFrame):
 
 
 def calculate_output_variable_binary(dataframe: DataFrame, binary_cutoff: float) -> DataFrame:
+    """
+    :param dataframe: Pandas Dataframe containing the pchembl_value together with the molecules
+    :param binary_cutoff: denotign the border value between the two classes  ie class_1 < binary cutoff < class_2
+    :return: The input dataframe with a new column containing the classes
+    """
     # Create two classes based on  the pchembl_value
     dataframe['binary'] = False
     dataframe.loc[dataframe['pchembl_value'] > binary_cutoff, 'binary'] = True
@@ -125,6 +151,13 @@ def calculate_output_variable_binary(dataframe: DataFrame, binary_cutoff: float)
 
 
 def calculate_output_variable_classes(dataframe: DataFrame, classes_cutoff: list) -> DataFrame:
+    """
+    :param dataframe: Pandas Dataframe containing the pchembl_value together with the molecules
+    :param classes_cutoff: list of values denoting the borders between the classes [3,4] would result in 3 klasses.
+     The first being all molecules with pchembl value < 3, the second with all molecules with pchembl value 3< < 4, and
+     the  last being all molecules with pchembl value  4 <
+    :return: The input dataframe with a new column containing the classes.
+    """
     # Create three classes based on the column pchembl_value
     dataframe['classes'] = 0
     for i in range(len(classes_cutoff) - 1):
@@ -136,6 +169,11 @@ def calculate_output_variable_classes(dataframe: DataFrame, classes_cutoff: list
 
 
 def calculateMolfromSmiles(dataframe: DataFrame):
+    """
+    Transforms the general smiles notation into scikitChem Mole representation with which
+    :param dataframe: Pandas dataframe containing the smiles representation of the molecules
+    :return: Pandas dataframe containing the Mol representation of the molecules
+    """
     print('start')
     tqdm.pandas()
     dataframe['molecules'] = dataframe['canonical_smiles'].progress_apply(lambda x: Chem.MolFromSmiles(x))
@@ -151,7 +189,7 @@ def calculate_descriptors(dataframe: DataFrame):
 
     df = DataFrame()
 
-    for i in range(5, 6):
+    for i in range(0, 50):
         print(f'calculating: {descriptors.all[i].__name__[len("mordred."):]} ')
         fp = open('./Data/fingerprints/' + descriptors.all[i].__name__[len('mordred.'):] + '.pkl', 'w+')
         fp.close()
@@ -165,14 +203,14 @@ def calculate_descriptors(dataframe: DataFrame):
 
 def filter_descriptors():
     """
-    :return:
+    Filters the calcualted descriptors by mordred based on certain properties. The the FilterClass can be adapted to filter
+    by othe properties
     """
     filter_counter = 0
     filterobj = FilterClass()
     cleaned_dataset = read_pickle('/media/magnus/Main_volume/moechtegerndesktop/Universitaet_Klagenfurt'
                                   '/Machine_learning_and_deep_learning/Data/dataset/cleaned_dataset.pkl')
 
-    # cleaned_dataset = cleaned_dataset.sample(frac=0.70)
 
     zeros = DataFrame([[''] * cleaned_dataset.shape[1]], columns=cleaned_dataset.columns)
     cleaned_dataset = zeros.append(cleaned_dataset, ignore_index=True)
@@ -187,8 +225,6 @@ def filter_descriptors():
 
     print(f'======= filtering values =======')
     for index, file in enumerate(file_list):
-        # if index > 60:
-        #    break
         print(f'== {file.rsplit("/", 1)[-1][:-4]} == index: {index}')
         data = DataFrame(read_pickle(file))
         data = data.loc[:, data.columns != 'molecule_chembl_id']
@@ -211,37 +247,27 @@ def filter_descriptors():
 
     cleaned_dataset.dropna(inplace=True)
     print(f'===After eliminating nans {cleaned_dataset.shape[0]} molecules remain===')
-    # df_1 = cleaned_dataset.iloc[:math.floor(len(cleaned_dataset.index)/3), :]
-    # df_2 = cleaned_dataset.iloc[math.floor(len(cleaned_dataset.index)/3)+1:math.floor(len(cleaned_dataset.index)/3*2), :]
-    # df_3 = cleaned_dataset.iloc[math.floor(len(cleaned_dataset.index)/3*2)+1:, :]
-    # del cleaned_dataset
-
-    # df_1.to_pickle('./Data/training/working_dataset1.pkl')
-    # del df_1
-    # print('df1 sucess')
-    # df_2.to_pickle('./Data/training/working_dataset2.pkl')
-    # del df_2
-    # print('df2 success')
-    # df_3.to_pickle('./Data/training/working_dataset3.pkl')
-    # print('df3 success')
     cleaned_dataset.to_pickle('./Data/training/working_dataset_int.pkl')
     print('successfully written to drive')
 
 
 def create_train_test_validate():
+    """
+    Splits a dataset into 3 parts, train test and validate
+    """
     train_ratio = 0.65
     validation_ratio = 0.15
     test_ratio = 0.20
 
     print('== creating test,train, and validation dataset ==')
-    dataset = read_pickle('./Data/training/working_dataset_floats.pkl')
+    dataset = read_pickle('./Data/training/dataset_oversampled.pkl')
     X_train, X_test, y_train, y_test = train_test_split(dataset.iloc[1:, 3:], dataset.iloc[1:, [1, 2]],
                                                         test_size=test_ratio + validation_ratio,
                                                         random_state=random.randint(0, 10000))
 
     X_validate, X_test, y_validate, y_test = train_test_split(X_test, y_test,
-                                                              test_size=test_ratio / (test_ratio + validation_ratio),
-                                                              random_state=random.randint(0, 100000))
+                                                               test_size=test_ratio / (test_ratio + validation_ratio),
+                                                               random_state=random.randint(0, 100000))
 
     print('Saving the train,test and validate datasets to disk')
     X_train.to_pickle('./Data/training/X_train.pkl')
@@ -259,27 +285,53 @@ def create_train_test_validate():
 
 
 def normalize():
+    """
+    Normalizes train,test and evaluate dataset using the Standard scaler saves the
+    scaled datasets to the drive
+    """
     print('== Normalizing dataset ==')
     print('loading train,test and validation datasets from disk')
     X_train = read_pickle('./Data/training/X_train.pkl')
-    # X_validate = read_pickle('./Data/training/X_validate.pkl')
+    X_validate = read_pickle('./Data/training/X_validate.pkl')
     X_test = read_pickle('./Data/training/X_test.pkl')
 
     print('scaling the dataset')
     scaler = StandardScaler().fit(X_train)
     X_train_scaled = DataFrame(scaler.transform(X_train))
-    # X_validate_scaled = DataFrame(scaler.transform(X_validate))
+    X_validate_scaled = DataFrame(scaler.transform(X_validate))
     X_test_scaled = DataFrame(scaler.transform(X_test))
 
     X_train_scaled.to_pickle('./Data/training/X_train.pkl')
-    # X_validate_scaled.to_pickle('./Data/training/X_validate.pkl')
+    X_validate_scaled.to_pickle('./Data/training/X_validate.pkl')
     X_test_scaled.to_pickle('./Data/training/X_test.pkl')
     print('written the scaled datasets back to  into ./Data/training')
 
     return None
 
 
+def Oversample():
+    """
+    Oversampling to have 50% active molecules & 50% inactive molecules in the dataset
+    """
+    print('Oversampling to have 50% active molecules & 50% inactive molecules')
+    dataset = read_pickle('./Data/training/working_dataset_floats.pkl')
+
+    dataset_active = dataset.loc[dataset['binary'] == 1]
+    dataset_inactive = dataset.loc[dataset['binary'] == 0]
+
+    dataset_oversampled = oversample_dataset(dataset_active, dataset_inactive)
+
+    dataset_oversampled.to_pickle('./Data/training/dataset_oversampled.pkl')
+    print('written the scaled datasets back to  into ./Data/training')
+    return None
+
+
 def multi_layer_perceptron():
+    """
+    Trains a multi_layer_perceptron classfier, evaluates it and saves the classifier to disk
+    :return:
+    """
+
     print('== started estimating: Multi-Layer-Perceptron ==')
     X_train = read_pickle('./Data/training/X_train.pkl')
     y_train = read_pickle('./Data/training/y_train.pkl')
@@ -316,6 +368,10 @@ def multi_layer_perceptron():
 
 
 def random_forest():
+    """
+    Trains a random forest classfier, evaluates it and saves the classifier to disk
+    :return: none
+    """
     print('== started estimating: Random forest ==')
     X_train = read_pickle('./Data/training/X_train.pkl')
     y_train = read_pickle('./Data/training/y_train.pkl')
@@ -335,6 +391,11 @@ def random_forest():
 
 
 def calc_pca(nr_features: int):
+    """
+    Calculates a PCA and removes features with little information
+    :param nr_features: number of features that should remain after the pca calculation
+    :return: none -> data is saved to disk
+    """
     print(f'== Applying PCA with {nr_features} remaining ==')
     dataset = read_pickle('./Data/training/working_dataset.pkl')
     size_original_dataset = dataset.shape[0]
@@ -348,40 +409,45 @@ def calc_pca(nr_features: int):
     return None
 
 
+def create_model(input_size):
+    """
+    :param input_size: the size of one set of input data
+    :return: a keras sequential model
+    """
+
+    METRICS = [
+        TruePositives(name='tp'),
+        FalsePositives(name='fp'),
+        TrueNegatives(name='tn'),
+        FalseNegatives(name='fn'),
+        BinaryAccuracy(name='accuracy'),
+        Precision(name='precision'),
+        Recall(name='recall'),
+        AUC(name='auc'),
+        AUC(name='prc', curve='PR'),  # precision-recall curve
+    ]
+
+    model_seq = Sequential()
+    model_seq.add(Dense(400, input_shape=(input_size,), activation='relu'))
+    model_seq.add(Dense(400, activation='relu'))
+    model_seq.add(Dense(1, activation='sigmoid'))
+
+    model_seq.compile(loss='binary_crossentropy', optimizer='Adam', run_eagerly=True, metrics=METRICS)
+    return model_seq
+
+
 def keras_deep_model():
-
-    def model_class():
-        METRICS = [
-            TruePositives(name='tp'),
-            FalsePositives(name='fp'),
-            TrueNegatives(name='tn'),
-            FalseNegatives(name='fn'),
-            BinaryAccuracy(name='accuracy'),
-            Precision(name='precision'),
-            Recall(name='recall'),
-            AUC(name='auc'),
-            AUC(name='prc', curve='PR'),  # precision-recall curve
-        ]
-
-        model_seq = Sequential()
-        model_seq.add(Dense(600, input_shape=(X_test.shape[1],)))
-        model_seq.add(LeakyReLU(alpha=0.02))
-        model_seq.add(Dense(400))
-        model_seq.add(Dropout(0.25))
-        model_seq.add(Dense(200))
-        model_seq.add(Dense(50))
-        model_seq.add(Dense(20))
-        model_seq.add(Dense(1, activation='sigmoid'))
-        model_seq.compile(loss='binary_crossentropy', optimizer='adam',run_eagerly=True, metrics=METRICS)
-        return model_seq
-
+    """
+    Trains and evaluates a neural network defined in the function create_model
+    :return: None
+    """
     X_train = read_pickle('./Data/training/X_train.pkl')
-    X_train=convert_to_tensor(X_train.to_numpy(dtype=np.float32))
+    X_train = convert_to_tensor(X_train.to_numpy(dtype=np.float32))
     y_train = read_pickle('./Data/training/y_train.pkl')
     y_train = convert_to_tensor(y_train['binary'].to_numpy(dtype=np.bool_))
 
     X_valid = read_pickle('./Data/training/X_validate.pkl')
-    X_valid=convert_to_tensor(X_valid.to_numpy(dtype=np.float32))
+    X_valid = convert_to_tensor(X_valid.to_numpy(dtype=np.float32))
     y_valid = read_pickle('./Data/training/y_validate.pkl')
     y_valid = convert_to_tensor(y_valid['binary'].to_numpy(dtype=np.bool))
 
@@ -391,10 +457,10 @@ def keras_deep_model():
     y_test = convert_to_tensor(y_test['binary'].to_numpy(dtype=np.bool_))
 
     # generating the keras model
-    model = model_class()
+    model = create_model(X_test.shape[1])
     checkpointer = ModelCheckpoint(filepath='./Data/models/current_keras_deep_model.h5',
                                    verbose=1, save_best_only=True)
-    lr_reduction = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.001)
+    lr_reduction = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.005)
 
     history = model.fit(X_train, y_train,
                         epochs=70, batch_size=4096,
@@ -402,20 +468,19 @@ def keras_deep_model():
                         callbacks=[checkpointer, lr_reduction])
 
     model.load_weights('./Data/models/current_keras_deep_model.h5')
-    old_model = model_class()
-    old_model.load_weights('./Data/models/keras_deep_model.h5')
     score_new = model.evaluate(X_test, y_test)
-    score_old = old_model.evaluate(X_test, y_test)
-    print(f'new score: {score_new} old score: {score_old}')
-    if score_new > score_old:
-        with open('./Data/models/evaluation.pkl', 'wb') as file:
-            pickle.dump(history, file)
 
+    print(f'new score: {score_new}')
+    with open('./Data/models/evaluation.pkl', 'wb') as file:
+        pickle.dump(history, file)
 
-    # score_old = old_model.evaluate(X_test, y_test)
 
 
 def grid_search():
+    """
+    Searches for the optimal solver and the best alpha value. Currently not used in this implementation
+    :return:
+    """
     sourceFile = open('./grid_search_evaluation.txt', 'w+')
     print('test', file=sourceFile)
     sourceFile.close()
@@ -443,6 +508,10 @@ def grid_search():
 
 
 def show_descriptor_stats():
+    """
+    Prints descriptor stats of all descriptors. Info include min,max,most frequent value etc.
+    """
+
     file_list = read_all_all_filenames(
         '/media/magnus/Main_volume/moechtegerndesktop/Universitaet_Klagenfurt/Machine_learning_and_deep_learning/Data/fingerprints')
     if len(file_list) == 0:
@@ -453,11 +522,16 @@ def show_descriptor_stats():
 
         data = DataFrame(read_pickle(file))
         data = data.loc[:, data.columns != 'molecule_chembl_id']
+        data = data.apply(to_numeric, errors='coerce')
         print(f'== {file.rsplit("/", 1)[-1][:-4]} nr-columns: {len(data.columns)} ==')
 
         for column in data:
             print()
             print(f'Name: {"{:<15}".format(column)}')
+            if data[column].isna().sum() == len(data[column].index):
+                print(f'column only contains Nans')
+                continue
+
             print(
                 f'max : {"{0:07f}".format(data[column].max(skipna=True))}      min: {"{0:07f}".format(data[column].min(skipna=True))}')
             print(
@@ -472,3 +546,65 @@ def show_descriptor_stats():
                     f'type: {"{:<15}".format(str(data_statistic.keys()[i]))} | nr: {"{:<10}".format(str(data_statistic.values[i]))} ')
 
         print('\n')
+
+
+def evaluate_models():
+    """
+    Prints out the evaluation for the random forest, the MLP model and the keras-deep model. Furthermore confusion matrixes are
+    displayed and losscurves are shown
+    :return:
+    """
+    X_test = read_pickle('./Data/training/X_test.pkl')
+    y_test = read_pickle('./Data/training/y_test.pkl')
+
+    # Random forest classifier
+    randomforestobj = read_pickle('./Data/models/RandomForestClassifier')
+    score = randomforestobj.score(X_test, y_test["binary"].astype(int))
+    plot_random_forest = create_confusion_matrix(y_test["binary"].astype(int), randomforestobj.predict(X_test))
+    title(f'random forest score: {score}')
+    show()
+
+    # MLPCClassifier
+    MLPCobj = read_pickle('./Data/models/MLPCClassifier')
+
+    score = MLPCobj.score(X_test, y_test["binary"].astype(int))
+
+    print(f'score: {MLPCobj.score(X_test, y_test["binary"].astype(int))}')
+    # loss curve
+    fig = gcf()
+    plot(MLPCobj.loss_curve_)
+    xlabel('iterations')
+    ylabel('loss')
+    title(f'Loss multi-layer-perceptron')
+    show()
+    # confusion matrix
+    create_confusion_matrix(y_test["binary"].astype(int), MLPCobj.predict(X_test))
+    title(f'Multi-layer-perceptron score: {score}')
+    show()
+
+    # keras deep model
+    keras_model = create_model(X_test.shape[1])
+    keras_model.load_weights('./Data/models/current_keras_deep_model.h5')
+    evaluation = read_pickle('./Data/models/evaluation.pkl')
+    score = keras_model.evaluate(X_test, y_test['binary'].astype(int))
+    create_confusion_matrix(y_test["binary"].astype(int), np.rint(keras_model.predict(X_test)))
+    title(f'Keras-deep-model score: {score[5]}')
+    show()
+
+    plot(evaluation.history['accuracy'])
+    plot(evaluation.history['val_accuracy'])
+    title('model accuracy')
+    ylabel('accuracy')
+    xlabel('epoch')
+    legend(['train', 'validate'], loc='upper left')
+    show()
+
+    plot(evaluation.history['loss'])
+    plot(evaluation.history['val_loss'])
+    title('model loss')
+    ylabel('loss')
+    xlabel('epoch')
+    legend(['train', 'validate'], loc='upper right')
+    show()
+
+    return None

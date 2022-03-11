@@ -8,6 +8,13 @@ from alive_progress import alive_bar
 
 
 def create_test_data(num_molecules, doubles, uniques) -> pd.DataFrame:
+    """
+    Creates test data looking like the dataset we are using in this project
+    :param num_molecules: number of molecules that the resulting pandas dataframe should contain
+    :param doubles: defines the number of molecules that should occur double
+    :param uniques: number of unique elements in the dataframe
+    :return: A pandas dataframe that is similar to the data we use in this project
+    """
     # create molecule_names
     molecule_names = []
     for i in range(num_molecules):
@@ -21,6 +28,7 @@ def create_test_data(num_molecules, doubles, uniques) -> pd.DataFrame:
     # create a value that is outside 2*std_dev to be eliminated
     pchembl_values[0] = 1000
     pchembl_values[num_molecules] = 2
+
     # create a random set of values to check if the mean and the std_dev is calculated correctly
     for i in range(0, doubles):
         pchembl_values[i * num_molecules + 1] = uniform(0, 1000)
@@ -48,7 +56,9 @@ def create_test_data(num_molecules, doubles, uniques) -> pd.DataFrame:
 
 
 class DataCleaningTest(unittest.TestCase):
-
+    """
+    Test class for functions implemented in Data_functions.py and util.py
+    """
     def testremovingdoubles(self):
         test_DataFrame = create_test_data(4, 10, 5)
 

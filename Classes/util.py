@@ -12,9 +12,16 @@ import pandas as pd
 from pandas import read_csv, concat, DataFrame, read_pickle
 from typing import Callable
 from gc import collect
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
 
 
 def read_in_csv_from_directory(directorypath):
+    """
+    Reads in a csv from a filepath
+    :param directorypath: string filepath
+    :return: a Pandas dataset containing the data of the csv file
+    """
     csv_files = [f for f in listdir(directorypath) if isfile(join(directorypath, f))]
     csv_files = [f for f in csv_files if f.endswith('.csv')]
     dataset = concat((read_csv(open(f'{directorypath}/{f}')) for f in csv_files))
@@ -22,6 +29,11 @@ def read_in_csv_from_directory(directorypath):
 
 
 def yes_or_no(message: str) -> bool:
+    """
+    prints a message then the user has to input yes or no. Then true or false is returned
+    :param message: string prints a message before asking for yes or no
+    :return:
+    """
     yes = {'yes', 'y'}
     no = {'no', 'n'}
 
@@ -37,6 +49,11 @@ def yes_or_no(message: str) -> bool:
 
 
 def read_all_all_filenames(path: str) -> list:
+    """
+    Reads all filenames of a directory (does not read in .gitignore)
+    :param path: directory where all filenames should be listed
+    :return: list of all files of a path
+    """
     f = []
     for (dirpath, dirnames, filenames) in walk(path):
         f.extend(filenames)
@@ -44,6 +61,8 @@ def read_all_all_filenames(path: str) -> list:
 
     for i in range(len(f)):
         f[i] = dirpath + '/' + f[i]
+
+    f = [val for val in f if not val.endswith(".gitignore")]
 
     return f
 
@@ -72,7 +91,51 @@ def correct_fingerprints(path: str):
     return True
 
 
+def oversample_dataset(df_pos,df_neg,oversampling_factor = 2):
+    """
+    Takes in two datasets one containing the active molecules and one containing all inactive molecules.
+    A new dataset is assembled the new datasetsout of oversampling_factor times all elements of the smaller group and a ran-
+    dom sample of elements from the larger group equal to the number of active molecules. Resulting we have a dataset
+     with 50%/50% active/inactive molecule distribution. The size of the dataset is about 45000 molecules.
+    :param df_pos: the dataset containting all elements with one class
+    :param df_neg: the dataset containing all elements of the other class
+    :param oversampling_factor: the resulting dataset contains from oversamplig factor X smaller class +
+            sample(bigger class,size(oversamplig factor X smaller class))
+    :return: a dataset with 50% of one class and 50% of the other class
+    """
+
+    if df_pos.shape[0] > df_neg.shape[0]:
+        bigger_df = df_pos
+        smaller_df = df_neg
+    else:
+        bigger_df = df_neg
+        smaller_df = df_pos
+
+    samples_from_majority = oversampling_factor*smaller_df.shape[0]
+    dataset = pd.concat([smaller_df]*oversampling_factor)
+    dataset = pd.concat([dataset, bigger_df.sample(n = samples_from_majority, axis = 0)])
+
+    dataset = dataset.sample(frac=1)
+
+    return dataset
+
+
+def create_confusion_matrix(y_test, y_pred):
+    """
+    wrapper class for displaying a confusion matrix using the scikit-learn classes confusion_matrix and ConfusionMatrixDisplay
+    """
+    cm = confusion_matrix(y_test, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['active','non_active'])
+
+    disp.plot()
+    return disp
+
+
 class FilterClass:
+    """
+    Class to filter elements. Initially is false if one of the inserted series fullfils the condition the state switches to
+    true. Then the series can be filtered
+    """
 
     def __init__(self):
         self.filtered = False
@@ -90,6 +153,10 @@ class FilterClass:
 
 
 class WorkChuncker:
+    """
+    Not used in this project. Applies a certain function to a big set of data by splitting the dataset into smaller chuncks
+    and working on them individually
+    """
 
     def __init__(self, func: Callable, path_to_file: str, path_to_result: str, size_chunck: int,
                  size_data_in_memory: int):
